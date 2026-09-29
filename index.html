@@ -2702,7 +2702,7 @@ async function loadData(){
     showAuthOverlay(e.message || 'ไม่สามารถเชื่อมต่อ Supabase ได้');
     return;
   }
-  state.users=state.users||[]; state.customTypes=state.customTypes||{}; state.assets=state.assets||[]; state.history=state.history||[];
+  state.users=state.users||[]; state.users.forEach(u=>{u.eid=u.eid||''; u.position=u.position||''; u.department=u.department||'';}); state.customTypes=state.customTypes||{}; state.assets=state.assets||[]; state.history=state.history||[];
   render();
 }
 
@@ -3043,6 +3043,30 @@ function wireTypeSelect(editing){
   };
 }
 
+const USER_DEPARTMENTS = [
+  'IT',
+  'Front Office',
+  'Housekeeping',
+  'Food & Beverage',
+  'Kitchen',
+  'Engineering',
+  'Finance & Accounting',
+  'Human Resources',
+  'Sales & Marketing',
+  'Revenue Management',
+  'Purchasing',
+  'Security',
+  'Spa',
+  'Executive Office',
+  'Other'
+];
+
+function departmentOptions(selected=''){
+  const options = [...USER_DEPARTMENTS];
+  if(selected && !options.includes(selected)) options.unshift(selected);
+  return options.map(v=>({value:v, label:v}));
+}
+
 function wireAssigneeQuickAdd(){
   const btn = document.getElementById('btnQuickAddUser');
   if(!btn) return;
@@ -3050,15 +3074,17 @@ function wireAssigneeQuickAdd(){
     showDialog({
       title: 'เพิ่มผู้ใช้งานใหม่',
       fields: [
-        {id:'name', label:'ชื่อผู้ใช้งาน', type:'text', placeholder:'ชื่อ-นามสกุล'},
-        {id:'department', label:'แผนก / ตำแหน่ง (ถ้ามี)', type:'text'}
+        {id:'name', label:'ชื่อ-นามสกุล', type:'text', placeholder:'ชื่อ-นามสกุล'},
+        {id:'eid', label:'EID', type:'text', placeholder:'เช่น fpiwn776'},
+        {id:'position', label:'ตำแหน่ง', type:'text', placeholder:'เช่น IT Admin'},
+        {id:'department', label:'แผนก', type:'select', options:departmentOptions()}
       ],
       confirmText: 'เพิ่ม',
       onConfirm: (values)=>{
         const name = (values.name||'').trim();
         if(!name){ showToast('กรุณากรอกชื่อผู้ใช้งาน'); return; }
         state.users = state.users || [];
-        state.users.push({id: uid('USR'), name, department: (values.department||'').trim()});
+        state.users.push({id: uid('USR'), name, eid: (values.eid||'').trim(), position: (values.position||'').trim(), department: (values.department||'').trim()});
         saveData();
         const datalist = document.getElementById('modalAssigneeList');
         if(datalist){
@@ -3519,6 +3545,8 @@ function renderUsersModal(){
             <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 2px;border-bottom:1px solid var(--line);">
               <div>
                 <div style="font-weight:500;font-size:13.5px;">${escapeHtml(u.name)}</div>
+                ${u.eid?`<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">EID: ${escapeHtml(u.eid)}</div>`:''}
+                ${u.position?`<div style="font-size:12px;color:var(--ink-soft);">${escapeHtml(u.position)}</div>`:''}
                 ${u.department?`<div style="font-size:12px;color:var(--ink-soft);">${escapeHtml(u.department)}</div>`:''}
               </div>
               <div style="display:flex;gap:6px;flex-shrink:0;">
@@ -3561,8 +3589,10 @@ function openUserFormDialog(userId){
   showDialog({
     title: editing ? 'แก้ไขผู้ใช้งาน' : 'เพิ่มผู้ใช้งานใหม่',
     fields: [
-      {id:'name', label:'ชื่อผู้ใช้งาน', type:'text', value: editing?editing.name:'', placeholder:'ชื่อ-นามสกุล'},
-      {id:'department', label:'แผนก / ตำแหน่ง (ถ้ามี)', type:'text', value: editing?editing.department:''}
+      {id:'name', label:'ชื่อ-นามสกุล', type:'text', value: editing?editing.name:'', placeholder:'ชื่อ-นามสกุล'},
+      {id:'eid', label:'EID', type:'text', value: editing?editing.eid:'', placeholder:'เช่น fpiwn776'},
+      {id:'position', label:'ตำแหน่ง', type:'text', value: editing?editing.position:'', placeholder:'เช่น IT Admin'},
+      {id:'department', label:'แผนก', type:'select', value: editing?editing.department:'', options: departmentOptions(editing?editing.department:'')}
     ],
     confirmText: editing ? 'บันทึก' : 'เพิ่ม',
     onConfirm: (values)=>{
@@ -3570,10 +3600,12 @@ function openUserFormDialog(userId){
       if(!name){ showToast('กรุณากรอกชื่อผู้ใช้งาน'); return; }
       if(editing){
         editing.name = name;
+        editing.eid = (values.eid||'').trim();
+        editing.position = (values.position||'').trim();
         editing.department = (values.department||'').trim();
         showToast('บันทึกข้อมูลผู้ใช้งานแล้ว');
       }else{
-        state.users.push({id: uid('USR'), name, department: (values.department||'').trim()});
+        state.users.push({id: uid('USR'), name, eid: (values.eid||'').trim(), position: (values.position||'').trim(), department: (values.department||'').trim()});
         showToast('เพิ่มผู้ใช้งานแล้ว');
       }
       saveData();

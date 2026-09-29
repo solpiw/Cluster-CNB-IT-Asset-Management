@@ -2,6 +2,18 @@
 
 ชุดนี้เปลี่ยน IT Asset Tracker จากการเก็บข้อมูลใน browser เป็นฐานข้อมูลกลางบน Supabase และใช้ GitHub Pages เป็นหน้าเว็บ
 
+## ข้อมูลผู้ใช้งาน (Users)
+
+หน้า **จัดการผู้ใช้งาน** แยกข้อมูลออกเป็น 4 ช่อง:
+- ชื่อ-นามสกุล
+- EID
+- ตำแหน่ง (Position)
+- แผนก (Department) — เลือกจาก Dropdown
+
+รายการแผนกเริ่มต้น ได้แก่ IT, Front Office, Housekeeping, Food & Beverage, Kitchen, Engineering, Finance & Accounting, Human Resources, Sales & Marketing, Revenue Management, Purchasing, Security, Spa, Executive Office และ Other
+
+ผู้ใช้งานเดิมที่ไม่มี EID/Position จะยังคงอยู่ และสามารถกด **แก้ไข** เพื่อเติมข้อมูลได้ ระบบจะไม่แยกค่าจากช่อง "แผนก / ตำแหน่ง" เดิมให้อัตโนมัติ เพื่อป้องกันข้อมูลเดิมถูกเปลี่ยนโดยไม่ตั้งใจ
+
 ## โครงสร้างไฟล์
 
 - `index.html` — ตัวระบบ
