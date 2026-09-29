@@ -1,110 +1,52 @@
 # IT Asset Tracker — GitHub Pages + Supabase
 
-ชุดนี้เปลี่ยน IT Asset Tracker จากการเก็บข้อมูลใน browser เป็นฐานข้อมูลกลางบน Supabase และใช้ GitHub Pages เป็นหน้าเว็บ
+## ฟังก์ชันในเวอร์ชันนี้
+- Login ด้วย Supabase Authentication
+- ข้อมูลกลางบน Supabase PostgreSQL + RLS
+- Asset Management / Users / Assignment / History / Photos / QR
+- จัดการประเภทอุปกรณ์: เพิ่ม / แก้ไขชื่อและไอคอน / ลบ
+- Users: Name, EID, Position, Department
+- Export Excel
+- Export PDF
+- Import Excel
+- ดาวน์โหลด Excel Import Template
+- Backup / Restore JSON
 
-## ข้อมูลผู้ใช้งาน (Users)
+## ไฟล์
+- `index.html` — โปรแกรมหลัก
+- `config.js` — Supabase URL + Publishable Key ของคุณ
+- `supabase.sql` — SQL สำหรับสร้างตารางและ RLS
+- `IT-Asset-Tracker-Import-Template.xlsx` — Template สำหรับ Import Excel
 
-หน้า **จัดการผู้ใช้งาน** แยกข้อมูลออกเป็น 4 ช่อง:
-- ชื่อ-นามสกุล
-- EID
-- ตำแหน่ง (Position)
-- แผนก (Department) — เลือกจาก Dropdown
+## การ Import Excel
+ไฟล์ Excel รองรับ 2 Sheet:
 
-รายการแผนกเริ่มต้น ได้แก่ IT, Front Office, Housekeeping, Food & Beverage, Kitchen, Engineering, Finance & Accounting, Human Resources, Sales & Marketing, Revenue Management, Purchasing, Security, Spa, Executive Office และ Other
+### Assets
+คอลัมน์:
+`Asset ID`, `Asset Name`, `Type`, `Model`, `Serial Number`, `Location`, `Purchase Date`, `Warranty Expiry`, `Status`, `Assignee`, `Notes`
 
-ผู้ใช้งานเดิมที่ไม่มี EID/Position จะยังคงอยู่ และสามารถกด **แก้ไข** เพื่อเติมข้อมูลได้ ระบบจะไม่แยกค่าจากช่อง "แผนก / ตำแหน่ง" เดิมให้อัตโนมัติ เพื่อป้องกันข้อมูลเดิมถูกเปลี่ยนโดยไม่ตั้งใจ
+### Users
+คอลัมน์:
+`User ID`, `Name`, `EID`, `Position`, `Department`
 
-## โครงสร้างไฟล์
+Asset ID / User ID เว้นว่างได้สำหรับรายการใหม่ ระบบจะสร้าง ID ให้เอง
 
-- `index.html` — ตัวระบบ
-- `config.js` — URL + Supabase Publishable Key
-- `supabase.sql` — สร้างตาราง + RLS
+Type ต้องตรงกับประเภทที่มีอยู่ในระบบ ส่วน Status รองรับ key หรือชื่อสถานะที่แสดงในระบบ
 
-## ขั้นตอนติดตั้ง
+Import จะตรวจข้อมูลก่อนบันทึก หากมีบางแถวผิด ระบบจะถามว่าจะนำเข้าเฉพาะแถวที่ถูกต้องหรือไม่
 
-### 1) สร้าง Supabase Project
+รายการที่มี Asset ID / User ID ตรงกันจะถูกอัปเดต รายการใหม่จะถูกเพิ่ม
 
-1. เข้า https://supabase.com/dashboard
-2. Create new project
-3. ตั้งชื่อ เช่น `it-asset-tracker`
-4. ตั้ง Database Password และเก็บไว้ใน password manager
-5. รอ project พร้อมใช้งาน
+> รูปภาพและประวัติการใช้งานจะไม่ถูกนำเข้าจาก Excel Template
 
-### 2) สร้าง Database
+## Export
+- `Export Excel` จะสร้างไฟล์ `.xlsx` พร้อม Sheets: Assets และ Users
+- `Export PDF` จะสร้างรายงานรายการ Assets เป็น PDF แนวนอน A4
+- `Excel Template` จะดาวน์โหลด Template เปล่าสำหรับกรอกข้อมูล
 
-1. เปิด SQL Editor
-2. เปิดไฟล์ `supabase.sql`
-3. Copy ทั้งหมดไปวาง
-4. กด Run
-5. ตรวจสอบ Table Editor จะเห็น `app_state`
+## GitHub Pages
+เมื่ออัปเดตโปรแกรม ให้แทนที่ `index.html` บน Repository เดิมได้เลย
+**อย่าทับ `config.js` หากมี Supabase URL/Publishable Key ของคุณอยู่แล้ว**
 
-### 3) สร้างผู้ใช้งาน Login
-
-ใน Supabase Dashboard ไปที่ Authentication > Users แล้วสร้างผู้ใช้ให้ทีม IT เช่น
-
-- itadmin@yourdomain.com
-- itusmvl@yourdomain.com
-- itusmss@yourdomain.com
-
-ผู้ใช้แต่ละคนต้องมี Password ของตัวเอง
-
-แนะนำให้ปิด Public Sign Ups เพื่อไม่ให้บุคคลภายนอกสมัคร account เอง
-
-### 4) ใส่ Project URL และ Publishable Key
-
-ไปที่ Project > Connect หรือ Settings > API Keys แล้วคัดลอก
-
-- Project URL
-- Publishable key (`sb_publishable_...`)
-
-นำไปใส่ใน `config.js`
-
-ห้ามใส่ `sb_secret_...` หรือ `service_role` key ใน `config.js`
-
-### 5) สร้าง GitHub Repository
-
-1. เข้า GitHub
-2. New repository
-3. ตั้งชื่อ `it-asset-tracker`
-4. ถ้าเป็นระบบภายใน แนะนำตั้ง Private
-5. Create repository
-
-### 6) Upload files
-
-Upload:
-
-- index.html
-- config.js
-
-ไม่จำเป็นต้อง upload `supabase.sql` แต่เก็บไว้เป็นเอกสารสำรองได้
-
-### 7) เปิด GitHub Pages
-
-Repository > Settings > Pages
-
-- Source: Deploy from a branch
-- Branch: `main`
-- Folder: `/ (root)`
-- Save
-
-รอ GitHub deploy แล้วจะได้ URL ประมาณ:
-
-`https://YOUR_GITHUB_USERNAME.github.io/it-asset-tracker/`
-
-### 8) Login
-
-เปิด URL แล้ว Login ด้วย account ที่สร้างใน Supabase Authentication
-
-ทุกเครื่องที่ login จะอ่าน/เขียนข้อมูลจาก `app_state` ชุดเดียวกัน
-
-## ความปลอดภัย
-
-GitHub Pages เป็น public/static hosting จึงต้องถือว่า `config.js` ถูกเปิดเผยได้ การป้องกันข้อมูลจริงอยู่ที่ Supabase Auth + PostgreSQL RLS
-
-Publishable key สามารถอยู่ใน frontend ได้ แต่ secret/service_role key ห้ามอยู่ใน frontend
-
-## หมายเหตุเรื่องการบันทึกข้อมูล
-
-ระบบเดิมเก็บ state ทั้งหมดเป็น JSON ก้อนเดียว ระบบใหม่นี้ยังคงโครงสร้างเดิมเพื่อให้ย้ายระบบได้ง่าย ดังนั้นถ้ามีผู้ใช้สองคนแก้ข้อมูลพร้อมกัน การบันทึกครั้งหลังอาจทับ state ของอีกคนได้
-
-สำหรับทีมเล็กและการใช้งานภายในเหมาะกับโครงสร้างนี้ แต่หากจะขยายเป็นระบบ Production ขนาดใหญ่ ควรแยกตาราง assets, users, assignments, history, locations, warranties ฯลฯ
+## Supabase Security
+ห้ามใส่ `service_role` หรือ Secret Key ใน `config.js` หรือ GitHub Repository ให้ใช้ Publishable Key และ RLS ตามที่กำหนดใน `supabase.sql`

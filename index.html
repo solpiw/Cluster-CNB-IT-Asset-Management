@@ -174,6 +174,9 @@
 .type-manager-list{display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow:auto;margin:14px 0}.type-manager-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--border,#e5e7eb);border-radius:12px;padding:10px 12px;background:var(--card,#fff)}.type-manager-main{display:flex;align-items:center;gap:10px;min-width:0}.type-manager-icon{font-size:24px}.type-manager-main strong{display:block}.type-manager-actions{display:flex;gap:6px;flex-shrink:0}.btn-sm{padding:7px 10px;font-size:12px}.btn-danger{background:#fff1f2;color:#be123c;border:1px solid #fecdd3}.muted{font-size:12px;color:#6b7280;margin-top:2px}.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.icon-btn{border:0;background:transparent;font-size:18px;cursor:pointer;padding:4px 6px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="config.js"></script>
 <style>
   #authOverlay{position:fixed;inset:0;background:rgba(27,36,48,.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:200;}
@@ -2772,6 +2775,10 @@ function render(){
         <div class="brand-sub">ข้อมูลส่วนกลางบน Supabase · ทุกเครื่องที่ Login จะเห็นข้อมูลชุดเดียวกัน</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="btnExportExcel">📊 Export Excel</button>
+        <button class="btn btn-ghost" id="btnExportPDF">📄 Export PDF</button>
+        <button class="btn btn-ghost" id="btnImportExcel">📥 Import Excel</button>
+        <button class="btn btn-ghost" id="btnExcelTemplate">📋 Excel Template</button>
         <button class="btn btn-ghost" id="btnExportData">⬇️ สำรองข้อมูล</button>
         <button class="btn btn-ghost" id="btnImportData">⬆️ นำเข้าข้อมูล</button>
         <button class="btn btn-ghost" id="btnManageUsers">👤 จัดการผู้ใช้งาน</button>
@@ -2848,6 +2855,10 @@ function render(){
   // wire events
   document.getElementById('btnAdd').onclick = ()=> openAssetModal(null);
   document.getElementById('btnManageUsers').onclick = openUsersModal;
+  document.getElementById('btnExportExcel').onclick = exportAssetsExcel;
+  document.getElementById('btnExportPDF').onclick = exportAssetsPDF;
+  document.getElementById('btnImportExcel').onclick = importExcelFile;
+  document.getElementById('btnExcelTemplate').onclick = downloadExcelTemplate;
   document.getElementById('btnExportData').onclick = exportBackup;
   document.getElementById('btnImportData').onclick = importBackupFile;
   document.getElementById('btnManageTypes').onclick = manageTypes;
@@ -3757,6 +3768,176 @@ function printAssetQRLabel(asset){
   ];
   win.document.write(parts.join('\n'));
   win.document.close();
+}
+
+/* ---------- Excel / PDF import & export ---------- */
+const EXCEL_ASSET_HEADERS = ['Asset ID','Asset Name','Type','Model','Serial Number','Location','Purchase Date','Warranty Expiry','Status','Assignee','Notes'];
+const EXCEL_USER_HEADERS = ['User ID','Name','EID','Position','Department'];
+
+function excelDateToISO(value){
+  if(value==null || value==='') return '';
+  if(value instanceof Date && !isNaN(value)) return value.toISOString().slice(0,10);
+  if(typeof value === 'number' && window.XLSX){
+    const d = XLSX.SSF.parse_date_code(value);
+    if(d && d.y) return String(d.y).padStart(4,'0')+'-'+String(d.m).padStart(2,'0')+'-'+String(d.d).padStart(2,'0');
+  }
+  const str=String(value).trim();
+  if(/^\d{4}-\d{1,2}-\d{1,2}$/.test(str)) return str;
+  const m=str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if(m) return m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+  return str;
+}
+
+function downloadBlob(blob, filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+function assetRowsForExcel(){
+  return state.assets.map(a=>({
+    'Asset ID':a.id||'', 'Asset Name':a.name||'', 'Type':getTypeInfo(a.type).label||a.type||'', 'Model':a.model||'',
+    'Serial Number':a.serial||'', 'Location':a.location||'', 'Purchase Date':a.purchaseDate||'', 'Warranty Expiry':a.warrantyExpiry||'',
+    'Status':(STATUSES[a.status]||{}).label||a.status||'', 'Assignee':a.assignee||'', 'Notes':a.notes||''
+  }));
+}
+function userRowsForExcel(){
+  return state.users.map(u=>({'User ID':u.id||'', 'Name':u.name||'', 'EID':u.eid||'', 'Position':u.position||'', 'Department':u.department||''}));
+}
+
+function makeWorkbook(includeInstructions=true){
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.json_to_sheet(assetRowsForExcel(), {header:EXCEL_ASSET_HEADERS});
+  if(!ws['!ref']) ws['!ref']='A1:K1';
+  XLSX.utils.book_append_sheet(wb,ws,'Assets');
+  const wu=XLSX.utils.json_to_sheet(userRowsForExcel(), {header:EXCEL_USER_HEADERS});
+  if(!wu['!ref']) wu['!ref']='A1:E1';
+  XLSX.utils.book_append_sheet(wb,wu,'Users');
+  if(includeInstructions){
+    const rows=[
+      ['IT Asset Tracker - Excel Template'],
+      ['Assets sheet: ใส่ข้อมูลทรัพย์สิน 1 รายการต่อ 1 แถว'],
+      ['Users sheet: ใส่ข้อมูลผู้ใช้งาน 1 คนต่อ 1 แถว'],
+      ['Type: ใช้ชื่อประเภทที่มีอยู่ในระบบ เช่น Computer, Printer หรือประเภทที่เพิ่มเอง'],
+      ['Status: Available / In Use / Repair / Retired หรือใช้ชื่อภาษาไทยที่แสดงในระบบ'],
+      ['Purchase Date / Warranty Expiry: รูปแบบ YYYY-MM-DD แนะนำให้ใช้รูปแบบนี้'],
+      ['Asset ID และ User ID เว้นว่างได้สำหรับรายการใหม่ ระบบจะสร้างให้อัตโนมัติ'],
+      ['EID: ใช้รหัสพนักงาน เช่น fpiwn776'],
+      ['หมายเหตุ: Import Excel จะเพิ่มรายการใหม่ และอัปเดตรายการที่มี Asset ID / User ID ตรงกัน']
+    ];
+    const wi=XLSX.utils.aoa_to_sheet(rows); XLSX.utils.book_append_sheet(wb,wi,'Instructions');
+  }
+  return wb;
+}
+
+function styleExcelSheet(ws,widths){ ws['!cols']=widths.map(w=>({wch:w})); }
+
+function exportAssetsExcel(){
+  if(!window.XLSX){showToast('ไม่พบ Excel Library กรุณาโหลดหน้าเว็บใหม่');return;}
+  const wb=makeWorkbook(false);
+  styleExcelSheet(wb.Sheets.Assets,[18,32,22,24,24,28,15,18,16,28,40]);
+  styleExcelSheet(wb.Sheets.Users,[18,30,16,24,24]);
+  XLSX.writeFile(wb,'it-asset-tracker-'+todayStr()+'.xlsx');
+  showToast('Export Excel สำเร็จ');
+}
+
+function downloadExcelTemplate(){
+  if(!window.XLSX){showToast('ไม่พบ Excel Library กรุณาโหลดหน้าเว็บใหม่');return;}
+  const wb=makeWorkbook(true);
+  // Template should be blank, except header rows.
+  ['Assets','Users'].forEach(name=>{
+    const ws=wb.Sheets[name];
+    const headers=name==='Assets'?EXCEL_ASSET_HEADERS:EXCEL_USER_HEADERS;
+    const blank=XLSX.utils.aoa_to_sheet([headers]);
+    wb.Sheets[name]=blank;
+  });
+  styleExcelSheet(wb.Sheets.Assets,[18,32,22,24,24,28,15,18,16,28,40]);
+  styleExcelSheet(wb.Sheets.Users,[18,30,16,24,24]);
+  const wi=wb.Sheets.Instructions; wi['!cols']=[{wch:90}];
+  XLSX.writeFile(wb,'IT-Asset-Tracker-Import-Template.xlsx');
+  showToast('ดาวน์โหลด Template Excel แล้ว');
+}
+
+function normalizeHeader(v){return String(v||'').trim().toLowerCase().replace(/[\s_\-\/]+/g,'');}
+function sheetRows(ws){return XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});}
+function findHeader(row, names){ const map={}; Object.keys(row).forEach(k=>map[normalizeHeader(k)]=row[k]); for(const n of names){if(Object.prototype.hasOwnProperty.call(map,normalizeHeader(n))) return map[normalizeHeader(n)];} return ''; }
+function findTypeKey(value){
+  const v=String(value||'').trim(); if(!v) return '';
+  const all=getAllTypes();
+  if(all[v]) return v;
+  const key=Object.keys(all).find(k=>String(all[k].label).trim().toLowerCase()===v.toLowerCase());
+  return key||'';
+}
+function findStatusKey(value){
+  const v=String(value||'').trim(); if(!v) return '';
+  if(STATUSES[v]) return v;
+  const key=Object.keys(STATUSES).find(k=>String(STATUSES[k].label).trim().toLowerCase()===v.toLowerCase());
+  return key||'';
+}
+
+async function importExcelFile(){
+  if(!window.XLSX){showToast('ไม่พบ Excel Library กรุณาโหลดหน้าเว็บใหม่');return;}
+  const input=document.createElement('input'); input.type='file'; input.accept='.xlsx,.xls'; input.style.display='none'; document.body.appendChild(input);
+  input.onchange=async e=>{
+    const file=e.target.files[0]; document.body.removeChild(input); if(!file)return;
+    try{
+      const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array',cellDates:true});
+      const assetSheet=wb.Sheets.Assets || wb.Sheets[wb.SheetNames[0]];
+      const userSheet=wb.Sheets.Users;
+      const assetRows=sheetRows(assetSheet);
+      const userRows=userSheet?sheetRows(userSheet):[];
+      if(!assetRows.length && !userRows.length){showToast('ไม่พบข้อมูลใน Excel');return;}
+      const errors=[]; const importedAssets=[]; const importedUsers=[];
+      assetRows.forEach((r,i)=>{
+        const row=i+2, name=String(findHeader(r,['Asset Name','Name','ชื่ออุปกรณ์','ชื่อ / คำอธิบายอุปกรณ์'])||'').trim();
+        if(!name){errors.push(`Assets แถว ${row}: ไม่มี Asset Name`);return;}
+        const typeKey=findTypeKey(findHeader(r,['Type','ประเภท']));
+        if(!typeKey){errors.push(`Assets แถว ${row}: ไม่พบประเภทที่ตรงกับระบบ`);return;}
+        const status=findStatusKey(findHeader(r,['Status','สถานะ'])) || 'available';
+        const id=String(findHeader(r,['Asset ID','ID','รหัสทรัพย์สิน'])||'').trim();
+        importedAssets.push({id,name,type:typeKey,model:String(findHeader(r,['Model','รุ่น','รุ่น / Model'])||'').trim(),serial:String(findHeader(r,['Serial Number','Serial','S/N'])||'').trim(),location:String(findHeader(r,['Location','สถานที่','สถานที่ / แผนก'])||'').trim(),purchaseDate:excelDateToISO(findHeader(r,['Purchase Date','วันที่ซื้อ'])),warrantyExpiry:excelDateToISO(findHeader(r,['Warranty Expiry','วันหมดอายุประกัน'])),status,assignee:String(findHeader(r,['Assignee','ผู้ใช้งาน','ผู้ใช้งานปัจจุบัน'])||'').trim(),notes:String(findHeader(r,['Notes','หมายเหตุ'])||'').trim()});
+      });
+      userRows.forEach((r,i)=>{
+        const row=i+2, name=String(findHeader(r,['Name','ชื่อ','ชื่อ-นามสกุล'])||'').trim();
+        if(!name){errors.push(`Users แถว ${row}: ไม่มี Name`);return;}
+        importedUsers.push({id:String(findHeader(r,['User ID','ID'])||'').trim(),name,eid:String(findHeader(r,['EID'])||'').trim(),position:String(findHeader(r,['Position','ตำแหน่ง'])||'').trim(),department:String(findHeader(r,['Department','แผนก'])||'').trim()});
+      });
+      const msg=`พบข้อมูล Assets ${importedAssets.length} รายการ และ Users ${importedUsers.length} รายการ`+(errors.length?`\n\nพบข้อผิดพลาด ${errors.length} รายการ:\n${errors.slice(0,8).join('\n')}${errors.length>8?'\n...':''}`:'');
+      if(errors.length) { showConfirmDialog('ตรวจสอบ Import Excel',msg+'\n\nต้องการนำเข้าเฉพาะแถวที่ถูกต้องหรือไม่?',async()=>applyExcelImport(importedAssets,importedUsers), 'นำเข้าเฉพาะข้อมูลที่ถูกต้อง'); }
+      else showConfirmDialog('ยืนยัน Import Excel',msg+'\n\nรายการที่มี ID ตรงกันจะถูกอัปเดต รายการใหม่จะถูกเพิ่ม ยืนยันหรือไม่?',async()=>applyExcelImport(importedAssets,importedUsers),'นำเข้า Excel');
+    }catch(err){ console.error(err); showToast('อ่านไฟล์ Excel ไม่สำเร็จ: '+(err.message||'ไฟล์อาจเสียหาย')); }
+  };
+  input.click();
+}
+
+async function applyExcelImport(importedAssets, importedUsers){
+  let addedA=0,updatedA=0,addedU=0,updatedU=0;
+  importedAssets.forEach(row=>{
+    let a=row.id?state.assets.find(x=>x.id===row.id):null;
+    if(a){Object.assign(a,row);updatedA++;}
+    else {const id=row.id||uid('IT-'+row.type.slice(0,3).toUpperCase()); state.assets.push({...row,id});addedA++;}
+  });
+  importedUsers.forEach(row=>{
+    let u=row.id?state.users.find(x=>x.id===row.id):null;
+    if(!u && row.eid) u=state.users.find(x=>x.eid && x.eid.toLowerCase()===row.eid.toLowerCase());
+    if(u){Object.assign(u,row);updatedU++;}
+    else {const id=row.id||uid('USR'); state.users.push({...row,id});addedU++;}
+  });
+  await saveData(); render();
+  showToast(`Import สำเร็จ: Assets เพิ่ม ${addedA} / แก้ไข ${updatedA}, Users เพิ่ม ${addedU} / แก้ไข ${updatedU}`);
+}
+
+function exportAssetsPDF(){
+  if(!window.jspdf){showToast('ไม่พบ PDF Library กรุณาโหลดหน้าเว็บใหม่');return;}
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(16); doc.text('IT Asset Tracker',14,14);
+  doc.setFontSize(9); doc.text('Exported: '+new Date().toLocaleString('en-GB'),14,20);
+  const rows=state.assets.map(a=>[a.id||'',a.name||'',getTypeInfo(a.type).label||'',(STATUSES[a.status]||{}).label||a.status||'',a.model||'',a.serial||'',a.assignee||'',a.location||'',a.warrantyExpiry||'']);
+  doc.autoTable({startY:25,head:[['Asset ID','Asset Name','Type','Status','Model','Serial','Assignee','Location','Warranty']],body:rows,styles:{fontSize:7,cellPadding:2},headStyles:{fillColor:[62,92,118],textColor:255},alternateRowStyles:{fillColor:[245,247,249]},margin:{left:8,right:8},didDrawPage:data=>{doc.setFontSize(7);doc.text('Page '+data.pageNumber,270,202,{align:'right'});}});
+  doc.save('it-asset-tracker-'+todayStr()+'.pdf');
+  showToast('Export PDF สำเร็จ');
 }
 
 /* ---------- Backup / restore (important for real-world use, especially
