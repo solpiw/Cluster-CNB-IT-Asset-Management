@@ -171,6 +171,7 @@
     .form-grid{grid-template-columns:1fr;}
     thead th:nth-child(4), tbody td:nth-child(4){display:none;}
   }
+.type-manager-list{display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow:auto;margin:14px 0}.type-manager-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--border,#e5e7eb);border-radius:12px;padding:10px 12px;background:var(--card,#fff)}.type-manager-main{display:flex;align-items:center;gap:10px;min-width:0}.type-manager-icon{font-size:24px}.type-manager-main strong{display:block}.type-manager-actions{display:flex;gap:6px;flex-shrink:0}.btn-sm{padding:7px 10px;font-size:12px}.btn-danger{background:#fff1f2;color:#be123c;border:1px solid #fecdd3}.muted{font-size:12px;color:#6b7280;margin-top:2px}.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.icon-btn{border:0;background:transparent;font-size:18px;cursor:pointer;padding:4px 6px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
@@ -2774,6 +2775,7 @@ function render(){
         <button class="btn btn-ghost" id="btnExportData">⬇️ สำรองข้อมูล</button>
         <button class="btn btn-ghost" id="btnImportData">⬆️ นำเข้าข้อมูล</button>
         <button class="btn btn-ghost" id="btnManageUsers">👤 จัดการผู้ใช้งาน</button>
+        <button class="btn btn-ghost" id="btnManageTypes">🏷️ จัดการประเภท</button>
         <button class="btn btn-primary" id="btnAdd">+ เพิ่มทรัพย์สิน</button>
       </div>
     </div>
@@ -2848,6 +2850,7 @@ function render(){
   document.getElementById('btnManageUsers').onclick = openUsersModal;
   document.getElementById('btnExportData').onclick = exportBackup;
   document.getElementById('btnImportData').onclick = importBackupFile;
+  document.getElementById('btnManageTypes').onclick = manageTypes;
   document.getElementById('searchInput').oninput = (e)=>{ ui.search = e.target.value; renderTableOnly(); };
   document.getElementById('typeFilter').onchange = (e)=>{ ui.typeFilter = e.target.value; render(); };
   document.getElementById('statusFilter').onchange = (e)=>{ ui.statusFilter = e.target.value; render(); };
@@ -3010,34 +3013,123 @@ function wireAssetPhotoCapture(editing){
   };
 }
 
+function manageTypes(){
+  const custom = state.customTypes || {};
+  const entries = Object.entries(custom);
+  const wrap = document.createElement('div');
+  wrap.id = 'typeManagerHost';
+  wrap.className = 'overlay';
+  wrap.style.zIndex = '59';
+  const rows = entries.length ? entries.map(([key,ty])=>{
+    const used = state.assets.filter(a=>a.type===key).length;
+    return `<div class="type-manager-row" data-key="${escapeAttr(key)}">
+      <div class="type-manager-main"><span class="type-manager-icon">${escapeHtml(ty.icon||'📦')}</span><div><strong>${escapeHtml(ty.label||key)}</strong><div class="muted">${used ? used+' รายการใช้งานอยู่' : 'ยังไม่มีทรัพย์สินใช้ประเภทนี้'}</div></div></div>
+      <div class="type-manager-actions">
+        <button class="btn btn-ghost btn-sm" data-edit-type="${escapeAttr(key)}">✏️ แก้ไข</button>
+        <button class="btn btn-danger btn-sm" data-delete-type="${escapeAttr(key)}">🗑️ ลบ</button>
+      </div>
+    </div>`;
+  }).join('') : '<div class="empty-state" style="padding:20px 8px;"><div class="big">🏷️</div><div>ยังไม่มีประเภทที่เพิ่มเอง</div></div>';
+  wrap.innerHTML=`<div class="modal" style="max-width:620px;">
+    <div class="modal-head"><div><h2>🏷️ จัดการประเภทอุปกรณ์</h2><div class="modal-sub">เพิ่ม แก้ไขชื่อ/ไอคอน หรือลบประเภทที่สร้างเองได้</div></div><button class="icon-btn" id="closeTypeManager">✕</button></div>
+    <div class="type-manager-list">${rows}</div>
+    <div class="modal-actions" style="justify-content:space-between;">
+      <button class="btn btn-primary" id="addTypeFromManager">+ เพิ่มประเภท</button>
+      <button class="btn btn-ghost" id="closeTypeManager2">ปิด</button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.onclick=e=>{if(e.target===wrap) close();};
+  document.getElementById('closeTypeManager').onclick=close;
+  document.getElementById('closeTypeManager2').onclick=close;
+  document.getElementById('addTypeFromManager').onclick=()=>{
+    close();
+    addCustomType(()=>manageTypes());
+  };
+  wrap.querySelectorAll('[data-edit-type]').forEach(btn=>btn.onclick=()=>editCustomType(btn.dataset.editType));
+  wrap.querySelectorAll('[data-delete-type]').forEach(btn=>btn.onclick=()=>deleteCustomType(btn.dataset.deleteType));
+}
+
+function addCustomType(after){
+  showDialog({
+    title:'เพิ่มประเภทอุปกรณ์ใหม่',
+    fields:[
+      {id:'name',label:'ชื่อประเภทอุปกรณ์',type:'text',placeholder:'เช่น แท็บเล็ต, เครื่องสแกนบาร์โค้ด'},
+      {id:'icon',label:'ไอคอน (emoji)',type:'text',value:'📦'}
+    ],
+    confirmText:'เพิ่มประเภท',
+    onConfirm:async values=>{
+      const cleanName=(values.name||'').trim();
+      if(!cleanName){showToast('กรุณากรอกชื่อประเภท');return;}
+      const icon=(values.icon||'📦').trim()||'📦';
+      const duplicate=Object.values(getAllTypes()).some(t=>(t.label||'').trim().toLowerCase()===cleanName.toLowerCase());
+      if(duplicate){showToast('มีชื่อประเภทนี้อยู่แล้ว');return;}
+      const key='custom_'+cleanName.toLowerCase().replace(/[^a-z0-9ก-๙]+/gi,'_').slice(0,24)+'_'+Math.random().toString(36).slice(2,5);
+      state.customTypes=state.customTypes||{};
+      state.customTypes[key]={label:cleanName,icon};
+      await saveData();
+      showToast('เพิ่มประเภทใหม่แล้ว: '+cleanName);
+      render();
+      if(after) after();
+    }
+  });
+}
+
+function editCustomType(key){
+  const current=(state.customTypes||{})[key];
+  if(!current) return;
+  showDialog({
+    title:'แก้ไขประเภทอุปกรณ์',
+    fields:[
+      {id:'name',label:'ชื่อประเภทอุปกรณ์',type:'text',value:current.label||''},
+      {id:'icon',label:'ไอคอน (emoji)',type:'text',value:current.icon||'📦'}
+    ],
+    confirmText:'บันทึกการแก้ไข',
+    onConfirm:async values=>{
+      const cleanName=(values.name||'').trim();
+      if(!cleanName){showToast('กรุณากรอกชื่อประเภท');return;}
+      const duplicate=Object.entries(getAllTypes()).some(([k,t])=>k!==key && (t.label||'').trim().toLowerCase()===cleanName.toLowerCase());
+      if(duplicate){showToast('มีชื่อประเภทนี้อยู่แล้ว');return;}
+      state.customTypes[key]={label:cleanName,icon:(values.icon||'📦').trim()||'📦'};
+      await saveData();
+      showToast('แก้ไขประเภทเรียบร้อยแล้ว');
+      render();
+      manageTypes();
+    }
+  });
+}
+
+function deleteCustomType(key){
+  const current=(state.customTypes||{})[key];
+  if(!current) return;
+  const used=state.assets.filter(a=>a.type===key).length;
+  if(used){showToast('ลบไม่ได้: มีทรัพย์สิน '+used+' รายการใช้ประเภทนี้อยู่');return;}
+  showConfirmDialog('ลบประเภทอุปกรณ์',`ยืนยันลบประเภท “${current.label}” หรือไม่? การลบประเภทจะไม่ลบข้อมูลทรัพย์สินอื่น`,async()=>{
+    delete state.customTypes[key];
+    await saveData();
+    showToast('ลบประเภทเรียบร้อยแล้ว');
+    render();
+    manageTypes();
+  },'ลบประเภท');
+}
+
 function wireTypeSelect(editing){
-  const sel = document.getElementById('f_type');
+  const sel=document.getElementById('f_type');
   if(!sel) return;
-  sel.onchange = (e)=>{
-    if(e.target.value !== '__new__') return;
-    const prevValue = editing ? editing.type : (Object.keys(getAllTypes())[0] || 'computer');
-    sel.value = prevValue; // reset the select while the dialog is open
-    showDialog({
-      title: 'เพิ่มประเภทอุปกรณ์ใหม่',
-      fields: [
-        {id:'name', label:'ชื่อประเภทอุปกรณ์', type:'text', placeholder:'เช่น แท็บเล็ต, เครื่องสแกนบาร์โค้ด'},
-        {id:'icon', label:'ไอคอน (emoji)', type:'text', value:'📦'}
-      ],
-      confirmText: 'เพิ่มประเภท',
-      onConfirm: (values)=>{
-        const cleanName = (values.name||'').trim();
-        if(!cleanName){ showToast('กรุณากรอกชื่อประเภท'); return; }
-        const icon = (values.icon||'📦').trim() || '📦';
-        const key = 'custom_' + cleanName.toLowerCase().replace(/[^a-z0-9ก-๙]+/gi,'_').slice(0,24) + '_' + Math.random().toString(36).slice(2,5);
-        state.customTypes = state.customTypes || {};
-        state.customTypes[key] = {label: cleanName, icon};
-        saveData();
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = icon + ' ' + cleanName;
-        sel.insertBefore(opt, sel.lastElementChild);
-        sel.value = key;
-        showToast('เพิ่มประเภทใหม่แล้ว: ' + cleanName);
+  sel.onchange=(e)=>{
+    if(e.target.value!=='__new__') return;
+    const prevValue=editing ? editing.type : (Object.keys(getAllTypes())[0]||'computer');
+    sel.value=prevValue;
+    addCustomType(()=>{
+      const latest=getAllTypes();
+      const newest=Object.keys(state.customTypes||{}).slice(-1)[0];
+      if(newest && latest[newest]){
+        const opt=document.createElement('option');
+        opt.value=newest;
+        opt.textContent=(latest[newest].icon||'📦')+' '+latest[newest].label;
+        sel.insertBefore(opt,sel.lastElementChild);
+        sel.value=newest;
       }
     });
   };
@@ -3055,7 +3147,7 @@ const USER_DEPARTMENTS = [
   'Sales & Marketing',
   'Revenue Management',
   'Purchasing',
-  'Lospivention',
+  'Security',
   'Spa',
   'Executive Office',
   'Other'
